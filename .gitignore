@@ -1,0 +1,38 @@
+# Virtual environment
+venv/
+.venv/
+env/
+venv_wsl/
+.venv_wsl/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data and Artifacts (Large/Generated)
+data/raw/
+outputs/
+*tcga_rna_seq.h5ad
+*tcga_methylation.h5ad
+!data/processed/geneformer_embeddings.npy
+!data/processed/methylgpt_embeddings.npy
+!data/processed/token_dictionary.pkl
+!data/processed/gene_median_dictionary.pkl
+!data/processed/probe_ids_type3.csv
+!requirements.txt
+!README.md
+
+# IDEs
+.vscode/
+.idea/
+
+# Large cloned repos (if any)
+MethylGPT/
+
+# System
+.DS_Store
+Thumbs.db
