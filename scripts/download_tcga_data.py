@@ -8,7 +8,14 @@ from pathlib import Path
 PROJECTS = ["TCGA-BRCA", "TCGA-LUAD", "TCGA-COAD", "TCGA-KIRC", "TCGA-LIHC", "TCGA-THCA"]
 DATA_DIR = Path("data/raw")
 MANIFEST_DIR = Path("data/manifests")
-LIMIT_PER_PROJECT = 5  # Target roughly 3000 total (SET TO 5 FOR TEST)
+PROJECT_SAMPLE_LIMITS = {
+    "TCGA-BRCA": 134,
+    "TCGA-LUAD": 134,
+    "TCGA-COAD": 133,
+    "TCGA-KIRC": 133,
+    "TCGA-LIHC": 133,
+    "TCGA-THCA": 133,
+}
 
 # GDC API Endpoints
 FILES_ENDPOINT = "https://api.gdc.cancer.gov/files"
@@ -55,11 +62,12 @@ def query_gdc_for_matched_samples(project_id):
     rna_map = {hit["cases"][0]["case_id"]: hit for hit in rna_files if hit.get("cases")}
     meth_map = {hit["cases"][0]["case_id"]: hit for hit in meth_files if hit.get("cases")}
   
-    common_cases = set(rna_map.keys()) & set(meth_map.keys())
+    common_cases = sorted(set(rna_map.keys()) & set(meth_map.keys()))
     print(f"Found {len(common_cases)} cases with both RNA-seq and Methylation in {project_id}.")
     
     matched_pairs = []
-    for case_id in list(common_cases)[:LIMIT_PER_PROJECT]:
+    sample_limit = PROJECT_SAMPLE_LIMITS[project_id]
+    for case_id in common_cases[:sample_limit]:
         matched_pairs.append({
             "project": project_id,
             "case_id": case_id,
@@ -78,9 +86,12 @@ def download_file(file_id, dest_path):
     response = requests.post(DATA_ENDPOINT, data=json.dumps({"ids": [file_id]}), headers={"Content-Type": "application/json"}, stream=True)
     response.raise_for_status()
     
-    with open(dest_path, "wb") as f:
+    temp_path = dest_path.with_suffix(dest_path.suffix + ".part")
+    with open(temp_path, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+            if chunk:
+                f.write(chunk)
+    temp_path.replace(dest_path)
 
 def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -91,7 +102,13 @@ def main():
     for project in PROJECTS:
         matched = query_gdc_for_matched_samples(project)
         all_matched.extend(matched)
-        
+
+    manifest_df = pd.DataFrame(all_matched)
+    manifest_df.to_csv(MANIFEST_DIR / "matched_samples.csv", index=False)
+    print(f"Manifest saved to {MANIFEST_DIR / 'matched_samples.csv'} with {len(manifest_df)} matched samples.")
+
+    for project in PROJECTS:
+        matched = [pair for pair in all_matched if pair["project"] == project]
         project_dir = DATA_DIR / project
         (project_dir / "rna_seq").mkdir(parents=True, exist_ok=True)
         (project_dir / "methylation").mkdir(parents=True, exist_ok=True)
@@ -104,9 +121,7 @@ def main():
             download_file(pair["rna_file_id"], project_dir / "rna_seq" / pair["rna_file_name"])
             download_file(pair["meth_file_id"], project_dir / "methylation" / pair["meth_file_name"])
             
-    manifest_df = pd.DataFrame(all_matched)
-    manifest_df.to_csv(MANIFEST_DIR / "matched_samples.csv", index=False)
-    print(f"Finished downloading data. Manifest saved to {MANIFEST_DIR / 'matched_samples.csv'}")
+    print("Finished downloading data.")
 
 if __name__ == "__main__":
     main()

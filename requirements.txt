@@ -8,6 +8,7 @@ pandas
 numpy
 tqdm
 scikit-learn
+xgboost
 
 # Foundation models
 methylgpt
