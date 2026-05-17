@@ -4,6 +4,8 @@ venv/
 env/
 venv_wsl/
 .venv_wsl/
+venv_clean/
+venv_methylgpt/
 
 # Python
 __pycache__/
@@ -16,6 +18,7 @@ htmlcov/
 # Data and Artifacts (Large/Generated)
 data/raw/
 outputs/
+MethylGPT_repo/
 *tcga_rna_seq.h5ad
 *tcga_methylation.h5ad
 !data/processed/geneformer_embeddings.npy
@@ -30,9 +33,10 @@ outputs/
 .vscode/
 .idea/
 
-# Large cloned repos (if any)
-MethylGPT/
-
 # System
 .DS_Store
 Thumbs.db
+
+# Generated text artifacts
+*.txt
+!requirements.txt

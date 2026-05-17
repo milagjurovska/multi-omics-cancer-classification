@@ -1,20 +1,14 @@
-requests
+# Core dependencies
+torch
+transformers
+datasets
+anndata
+scanpy
 pandas
 numpy
 tqdm
 scikit-learn
-xgboost
-torch
-torchtext
-transformers
-datasets
-pyarrow
-openpyxl
-matplotlib
-seaborn
-anndata
-scanpy
-lightning
-ipython
-scib-metrics
-# flash-attn<1.0.5  # recommended for MethylGPT if GPU available
+
+# Foundation models
+methylgpt
+sentencepiece

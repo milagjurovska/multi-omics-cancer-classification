@@ -37,6 +37,16 @@ Data is downloaded using the GDC API, specifically filtering for patients with m
 pip install -r requirements.txt
 ```
 
+### External Foundation Models
+This project uses **MethylGPT** as an external foundation model for DNA methylation embeddings. MethylGPT is developed by other researchers and is not included in this repository.
+
+Clone the MethylGPT repository separately into the project folder when needed:
+```bash
+git clone <MethylGPT repository URL> MethylGPT_repo
+```
+
+The `MethylGPT_repo/` folder is ignored by Git so its source code and model files are not committed to this repository.
+
 ### Data Download
 To download the initial test subset:
 ```bash
