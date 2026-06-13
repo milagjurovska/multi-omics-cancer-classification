@@ -1,0 +1,16 @@
+baseline,classifier,evaluation,fold,n_train,n_test,accuracy,f1_macro,f1_weighted,precision_macro,recall_macro,auc_ovr_macro
+RNA_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",1,640,160,0.99375,0.9938250428816467,0.9937478559176671,0.9940476190476191,0.9938271604938271,1.0
+RNA_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",2,640,160,1.0,1.0,1.0,1.0,1.0,1.0
+RNA_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",3,640,160,0.9875,0.9876543209876543,0.9875,0.9876543209876543,0.9876543209876543,0.9998607630186577
+RNA_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",4,640,160,1.0,1.0,1.0,1.0,1.0,1.0
+RNA_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",5,640,160,0.99375,0.9937017231134879,0.9937455436720143,0.9940476190476191,0.9935897435897436,0.9998086490623804
+Methylation_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",1,640,160,0.9875,0.987535734705546,0.9874978559176674,0.9878747795414462,0.9876543209876543,0.9999071753457719
+Methylation_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",2,640,160,0.99375,0.9938250428816467,0.9937478559176671,0.9940476190476191,0.9938271604938271,1.0
+Methylation_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",3,640,160,0.9875,0.9877583108715183,0.9876052897574124,0.9885057471264368,0.9876543209876543,0.9999071753457719
+Methylation_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",4,640,160,0.99375,0.9937017231134878,0.9937455436720143,0.9940476190476191,0.9935897435897436,0.9998564867967853
+Methylation_only,XGBoost,"raw-omics task difficulty control, StratifiedKFold",5,640,160,0.9875,0.9874124149373871,0.9874955436720143,0.9878747795414462,0.9874169040835707,1.0
+RNA_plus_methylation,XGBoost,"raw-omics task difficulty control, StratifiedKFold",1,640,160,0.9875,0.9877583108715183,0.9876052897574125,0.9885057471264368,0.9876543209876543,1.0
+RNA_plus_methylation,XGBoost,"raw-omics task difficulty control, StratifiedKFold",2,640,160,1.0,1.0,1.0,1.0,1.0,1.0
+RNA_plus_methylation,XGBoost,"raw-omics task difficulty control, StratifiedKFold",3,640,160,0.99375,0.9938250428816467,0.9937478559176671,0.9940476190476191,0.9938271604938271,1.0
+RNA_plus_methylation,XGBoost,"raw-omics task difficulty control, StratifiedKFold",4,640,160,1.0,1.0,1.0,1.0,1.0,1.0
+RNA_plus_methylation,XGBoost,"raw-omics task difficulty control, StratifiedKFold",5,640,160,0.99375,0.9937017231134879,0.9937455436720143,0.9940476190476191,0.9935897435897436,0.9998564867967854

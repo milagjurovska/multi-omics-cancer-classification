@@ -1,0 +1,6 @@
+baseline,classifier,evaluation,fold,n_train,n_test,accuracy,f1_macro,f1_weighted,precision_macro,recall_macro,auc_ovr_macro
+MOFA+,XGBoost_shuffled_labels_control,strict train-fold MOFA + held-out projection,1,640,160,0.15625,0.15969650916459427,0.16702772404900063,0.1788004531211053,0.1518293177129384,0.5113156974422198
+MOFA+,XGBoost_shuffled_labels_control,strict train-fold MOFA + held-out projection,2,640,160,0.125,0.12395449641983246,0.12468949056144685,0.13021018475808807,0.1287445595091772,0.4981690753971188
+MOFA+,XGBoost_shuffled_labels_control,strict train-fold MOFA + held-out projection,3,640,160,0.2,0.20054740385200154,0.20277317270851752,0.20695511179382145,0.20152213378019826,0.5427638743630102
+MOFA+,XGBoost_shuffled_labels_control,strict train-fold MOFA + held-out projection,4,640,160,0.2,0.19926246592913263,0.20202441077441077,0.2070267131242741,0.19735718729971605,0.5041124013808851
+MOFA+,XGBoost_shuffled_labels_control,strict train-fold MOFA + held-out projection,5,640,160,0.21875,0.21822793621114045,0.21630870798023735,0.22186273401488163,0.22539976909808124,0.5036035104537627
