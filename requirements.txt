@@ -1,5 +1,6 @@
 # Core dependencies
 torch
+torchtext
 transformers
 datasets
 anndata
@@ -9,7 +10,20 @@ numpy
 tqdm
 scikit-learn
 xgboost
+pyarrow
+openpyxl
+matplotlib
+seaborn
+lightning
+ipython
+scib-metrics
 
 # Foundation models
 methylgpt
 sentencepiece
+
+# Classifier & evaluation
+umap-learn
+shap
+
+# flash-attn<1.0.5  # recommended for MethylGPT if GPU available
