@@ -1,0 +1,9 @@
+{
+  "latent_dim": 64,
+  "n_samples": 800,
+  "recon_val_mse": 0.1666,
+  "cv_accuracy_mean": 0.9837,
+  "cv_accuracy_std": 0.0064,
+  "cv_f1_macro_mean": 0.9837,
+  "silhouette": 0.0702
+}
