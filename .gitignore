@@ -6,6 +6,7 @@ venv_wsl/
 .venv_wsl/
 venv_clean/
 venv_methylgpt/
+venv_bulkformer/
 
 # Python
 __pycache__/
@@ -21,6 +22,10 @@ outputs/
 MethylGPT_repo/
 *tcga_rna_seq.h5ad
 *tcga_methylation.h5ad
+
+# Model weights (too large for git — store in Google Drive or download manually)
+*.pt
+BulkFormer/
 !data/processed/geneformer_embeddings.npy
 !data/processed/methylgpt_embeddings.npy
 !data/processed/token_dictionary.pkl
