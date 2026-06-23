@@ -3,13 +3,13 @@
 This project implements a multi-omics approach to cancer classification, leveraging transfer learning from foundation models specialized in biological data. We integrate DNA Methylation and RNA-seq data from TCGA (The Cancer Genome Atlas) to improve diagnostic accuracy across multiple cancer types.
 
 ## Motivation
-Cancer is a complex disease requiring analysis across multiple molecular levels. Foundation models like **MethylGPT** (or CpGPT) for methylation and **Geneformer** for transcriptomics offer rich representations that capture intricate biological dependencies better than traditional methods.
+Cancer is a complex disease requiring analysis across multiple molecular levels. Foundation models like **CpGPT** for methylation and **BulkFormer** for transcriptomics offer rich representations that capture intricate biological dependencies better than traditional methods.
 
 ## Methodology
 The project follows a multi-phase approach:
 1.  **Parallel Preprocessing**:
-    *   **RNA-seq**: Processed for Geneformer to capture gene interactions.
-    *   **DNA Methylation**: Processed for MethylGPT to extract epigenetic embeddings.
+    *   **RNA-seq**: Processed for BulkFormer to capture gene interactions.
+    *   **DNA Methylation**: Processed for CpGPT to extract epigenetic embeddings.
 2.  **Fusion Strategies**:
     *   **Early Fusion**: Concatenating embeddings before classification.
     *   **Late Fusion**: Ensemble of specialized models for each modality.
@@ -38,31 +38,23 @@ pip install -r requirements.txt
 ```
 
 ### External Foundation Models
-This project uses **MethylGPT** as an external foundation model for DNA methylation embeddings. MethylGPT is developed by other researchers and is not included in this repository.
 
-Recommended install from PyPI:
+#### BulkFormer (RNA-seq)
+BulkFormer is a transformer pretrained on ~500k bulk RNA-seq samples. The architecture files are not included in this repository. Download them by running:
 ```bash
-pip install methylgpt
+python scripts/setup_bulkformer.py
 ```
 
-For pinned dependency versions or development installs, use the upstream repository:
-```bash
-git clone https://github.com/albert-ying/MethylGPT.git
-cd MethylGPT
-pip install -r requirements.txt
-pip install -e .
-```
+Then place the following data files in `BulkFormer/data/` (download from [Zenodo doi:10.5281/zenodo.15744294](https://doi.org/10.5281/zenodo.15744294)):
+- `G_tcga.pt`, `G_tcga_weight.pt`, `esm2_feature_concat.pt`, `interested_gene_list.pt`
 
-Alternatively, create the conda environment from the upstream repository:
-```bash
-git clone https://github.com/albert-ying/MethylGPT.git
-cd MethylGPT
-conda env create -f environment.yml
-conda activate methylgpt
-pip install -e .
-```
+And place `BulkFormer_147M.pt` in `pretrained_models/`.
 
-If the upstream repository is cloned inside this project as `MethylGPT_repo/`, that folder is ignored by Git so its source code and model files are not committed here.
+#### CpGPT (DNA methylation)
+CpGPT is used for DNA methylation embeddings. Run `notebooks/colab/cpgpt_colab.ipynb` on Google Colab.
+
+#### Note on additional embeddings
+We also have precomputed embeddings from **Geneformer** (RNA-seq, 512 dims) and **MethylGPT** (DNA methylation, 128 dims) stored in `data/processed/`. These were extracted on Google Colab via `notebooks/colab/geneformer_colab.ipynb` and `notebooks/colab/methylgpt_colab.ipynb` and are available for comparison experiments.
 
 ### Data Download
 To download the initial test subset:
@@ -75,16 +67,13 @@ python scripts/download_tcga_data.py
 After preprocessing and embedding extraction, the modeling pipeline trains cancer-type classifiers from the foundation-model embeddings.
 
 Expected inputs:
-* `data/processed/geneformer_embeddings.npy` - RNA-seq embeddings from Geneformer.
-* DNA methylation embeddings from MethylGPT or CpGPT. The pipeline will automatically use the first file it finds from:
-  * `data/processed/methylgpt_embeddings.npy`
-  * `data/processed/cpgpt_embeddings.npy`
-  * `data/processed/dna_methylation_embeddings.npy`
-* `data/processed/tcga_rna_seq.h5ad` and `data/processed/tcga_methylation.h5ad` - metadata with `case_id` and `cancer_type`.
+* `data/processed/bulkformer_embeddings.npy` - RNA-seq embeddings from BulkFormer (800 samples, 643 dims).
+* `data/processed/cpgpt_embeddings.npy` - DNA methylation embeddings from CpGPT.
+* Additional available embeddings: `geneformer_embeddings.npy`, `methylgpt_embeddings.npy`.
 
 Run the full classification workflow:
 ```bash
-python scripts/train_classification_pipeline.py
+python scripts/train_classifier.py
 ```
 
 The script evaluates:
@@ -93,19 +82,8 @@ The script evaluates:
 * Early fusion by concatenating RNA and methylation embeddings.
 * Late fusion by averaging class probabilities from separate RNA and methylation classifiers.
 
-The default classifier is XGBoost:
-```bash
-python scripts/train_classification_pipeline.py --models xgboost
-```
-
-Other available classifiers are logistic regression, random forest, and a neural network classifier:
-```bash
-python scripts/train_classification_pipeline.py --models logistic_regression random_forest mlp
-```
-
 Results are written to `outputs/classification/`:
 * `metrics_summary.csv` - cross-validation Accuracy, macro F1, weighted F1, and one-vs-rest ROC-AUC.
 * `predictions.csv` - fold-level predictions.
 * `aligned_samples.csv` - samples shared by both omics modalities.
 * `run_config.json` - paths and settings used for the run.
-
