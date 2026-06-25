@@ -3,8 +3,8 @@ Multi-Omics Cancer Classification — Full Evaluation Pipeline
 6 cancer types: BRCA, LUAD, COAD, KIRC, LIHC, THCA
 
 Experiments:
-  1. Geneformer only
-  2. MethylGPT only
+  1. BulkFormer only
+  2. CpGPT only
   3. Early Fusion (concat embeddings)
   4. Late Fusion  (ensemble probabilities)
   5. Baseline     (PCA on raw features — shows value of foundation models)
@@ -40,15 +40,19 @@ from sklearn.metrics import (
 import xgboost as xgb
 import shap
 import umap
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-DATA_DIR       = Path("data/processed")
-GENEFORMER_EMB = DATA_DIR / "geneformer_embeddings.npy"
-METHYLGPT_EMB  = DATA_DIR / "methylgpt_embeddings.npy"
-MANIFEST       = Path("data/manifests/matched_samples.csv")
-METHYLATION_H5 = DATA_DIR / "tcga_methylation.h5ad"
-RNA_H5         = DATA_DIR / "tcga_rna_seq.h5ad"
-RESULTS_DIR    = Path("results")
+DATA_DIR        = Path("data/processed")
+GENEFORMER_EMB  = DATA_DIR / "bulkformer_embeddings.npy"
+METHYLGPT_EMB   = DATA_DIR / "cpgpt_embeddings.npy"
+AUTOENCODER_EMB = DATA_DIR / "autoencoder_embeddings.npy"
+MANIFEST        = Path("data/manifests/matched_samples.csv")
+METHYLATION_H5  = DATA_DIR / "tcga_methylation.h5ad"
+RNA_H5          = DATA_DIR / "tcga_rna_seq.h5ad"
+RESULTS_DIR     = Path("results")
 RESULTS_DIR.mkdir(exist_ok=True)
 
 # ── Config ─────────────────────────────────────────────────────────────────
@@ -62,6 +66,116 @@ CANCER_COLORS = {
     "TCGA-LIHC": "#984ea3",
     "TCGA-THCA": "#a65628",
 }
+
+
+# ── Multi-Input Autoencoder ────────────────────────────────────────────────
+
+class MultiInputAutoencoder(nn.Module):
+    def __init__(self, dim_a, dim_b, latent_dim=64):
+        super().__init__()
+        combined = dim_a + dim_b
+        self.encoder = nn.Sequential(
+            nn.Linear(combined, 256), nn.BatchNorm1d(256), nn.ReLU(),
+            nn.Linear(256, 128),     nn.BatchNorm1d(128), nn.ReLU(),
+            nn.Linear(128, latent_dim),
+        )
+        self.decoder_a = nn.Sequential(
+            nn.Linear(latent_dim, 128), nn.ReLU(),
+            nn.Linear(128, 256),        nn.ReLU(),
+            nn.Linear(256, dim_a),
+        )
+        self.decoder_b = nn.Sequential(
+            nn.Linear(latent_dim, 64), nn.ReLU(),
+            nn.Linear(64, dim_b),
+        )
+
+    def forward(self, x):
+        z = self.encoder(x)
+        return self.decoder_a(z), self.decoder_b(z), z
+
+
+def train_autoencoder(X_a, X_b, latent_dim=64, epochs=150, batch_size=64, lr=1e-3):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    scaler_a = StandardScaler().fit(X_a)
+    scaler_b = StandardScaler().fit(X_b)
+    Xa = torch.tensor(scaler_a.transform(X_a), dtype=torch.float32).to(device)
+    Xb = torch.tensor(scaler_b.transform(X_b), dtype=torch.float32).to(device)
+    X  = torch.cat([Xa, Xb], dim=1)
+
+    model = MultiInputAutoencoder(X_a.shape[1], X_b.shape[1], latent_dim).to(device)
+    opt   = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
+    loader = DataLoader(TensorDataset(X, Xa, Xb), batch_size=batch_size, shuffle=True)
+
+    model.train()
+    for _ in range(epochs):
+        for xb, xa_t, xb_t in loader:
+            recon_a, recon_b, _ = model(xb)
+            loss = nn.functional.mse_loss(recon_a, xa_t) + nn.functional.mse_loss(recon_b, xb_t)
+            opt.zero_grad(); loss.backward(); opt.step()
+        sched.step()
+
+    model.eval()
+    with torch.no_grad():
+        _, _, z = model(X)
+    return z.cpu().numpy(), scaler_a, scaler_b, model, device
+
+
+def encode_autoencoder(model, scaler_a, scaler_b, X_a, X_b, device):
+    Xa = torch.tensor(scaler_a.transform(X_a), dtype=torch.float32).to(device)
+    Xb = torch.tensor(scaler_b.transform(X_b), dtype=torch.float32).to(device)
+    X  = torch.cat([Xa, Xb], dim=1)
+    model.eval()
+    with torch.no_grad():
+        _, _, z = model(X)
+    return z.cpu().numpy()
+
+
+def deep_fusion_kfold(gf_emb, mg_emb, y, le, latent_dim=64):
+    skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    acc_scores, f1_scores, auc_scores = [], [], []
+    all_y_true, all_y_pred, all_y_proba = [], [], []
+
+    print(f"\n{'='*60}")
+    print(f"  Experiment: Deep Fusion (Multi-Input Autoencoder, {latent_dim}-dim latent)")
+    print(f"{'='*60}")
+
+    for fold, (train_idx, val_idx) in enumerate(skf.split(gf_emb, y)):
+        # Train autoencoder on training fold only
+        z_train, sc_a, sc_b, ae_model, device = train_autoencoder(
+            gf_emb[train_idx], mg_emb[train_idx], latent_dim=latent_dim
+        )
+        z_val = encode_autoencoder(ae_model, sc_a, sc_b, gf_emb[val_idx], mg_emb[val_idx], device)
+
+        y_train, y_val = y[train_idx], y[val_idx]
+        clf = make_xgb()
+        clf.fit(z_train, y_train)
+        y_pred  = clf.predict(z_val)
+        y_proba = clf.predict_proba(z_val)
+
+        acc = accuracy_score(y_val, y_pred)
+        f1  = f1_score(y_val, y_pred, average="macro", zero_division=0)
+        y_bin   = label_binarize(y_val, classes=list(range(len(le.classes_))))
+        auc_val = roc_auc_score(y_bin, y_proba, multi_class="ovr", average="macro")
+
+        acc_scores.append(acc); f1_scores.append(f1); auc_scores.append(auc_val)
+        all_y_true.extend(y_val); all_y_pred.extend(y_pred); all_y_proba.append(y_proba)
+        print(f"  Fold {fold+1}: Acc={acc:.3f}  F1={f1:.3f}  AUC={auc_val:.3f}")
+
+    print(f"  ── Mean ──  Acc={np.mean(acc_scores):.3f}±{np.std(acc_scores):.3f}  "
+          f"F1={np.mean(f1_scores):.3f}±{np.std(f1_scores):.3f}  "
+          f"AUC={np.mean(auc_scores):.3f}±{np.std(auc_scores):.3f}")
+
+    return {
+        "label":       "Deep Fusion (Autoencoder)",
+        "acc_mean":    np.mean(acc_scores), "acc_std":    np.std(acc_scores),
+        "f1_mean":     np.mean(f1_scores),  "f1_std":     np.std(f1_scores),
+        "auc_mean":    np.mean(auc_scores), "auc_std":    np.std(auc_scores),
+        "models":      [], "val_idx": [], "y_pred": [], "y_proba": [],
+        "all_y_true":  np.array(all_y_true),
+        "all_y_pred":  np.array(all_y_pred),
+        "all_y_proba": np.vstack(all_y_proba),
+    }
 
 
 # ── Model ──────────────────────────────────────────────────────────────────
@@ -88,16 +202,15 @@ def load_data():
     y        = le.fit_transform(labels)
 
     gf_emb = np.load(GENEFORMER_EMB)
-    mg_emb = np.load(METHYLGPT_EMB) if METHYLGPT_EMB.exists() else None
+    mg_emb = np.load(METHYLGPT_EMB)   if METHYLGPT_EMB.exists()   else None
+    ae_emb = np.load(AUTOENCODER_EMB) if AUTOENCODER_EMB.exists() else None
 
-    print(f"Samples          : {gf_emb.shape[0]}")
-    print(f"Geneformer dims  : {gf_emb.shape[1]}")
-    if mg_emb is not None:
-        print(f"MethylGPT dims   : {mg_emb.shape[1]}")
-    else:
-        print("MethylGPT        : not yet available")
-    print(f"Classes          : {le.classes_}")
-    return gf_emb, mg_emb, y, labels, le
+    print(f"Samples              : {gf_emb.shape[0]}")
+    print(f"BulkFormer dims      : {gf_emb.shape[1]}")
+    print(f"CpGPT dims       : {mg_emb.shape[1] if mg_emb is not None else 'not found'}")
+    print(f"Autoencoder dims     : {ae_emb.shape[1] if ae_emb is not None else 'not found (waiting for Bojana)'}")
+    print(f"Classes              : {le.classes_}")
+    return gf_emb, mg_emb, ae_emb, y, labels, le
 
 
 def load_raw_features():
@@ -231,7 +344,7 @@ def plot_umap(embeddings_dict, labels):
     for ax, (name, X) in zip(axes, embeddings_dict.items()):
         print(f"  Computing UMAP for {name}...")
         reducer   = umap.UMAP(n_components=2, random_state=RANDOM_STATE, n_neighbors=15, min_dist=0.1)
-        embedding = reducer.fit_transform(X)
+        embedding = reducer.fit_transform(X.astype(np.float32))
         for cancer in unique:
             mask = labels == cancer
             ax.scatter(embedding[mask, 0], embedding[mask, 1],
@@ -327,11 +440,16 @@ def plot_shap(X, y, label="Best Model"):
     shap_values = explainer.shap_values(X[:sample_size])
 
     if isinstance(shap_values, list):
+        # list of (n_samples, n_features) arrays, one per class
         mean_abs_shap = np.mean([np.abs(sv) for sv in shap_values], axis=0)
+    elif shap_values.ndim == 3:
+        # shape (n_samples, n_features, n_classes) — newer shap
+        mean_abs_shap = np.abs(shap_values).mean(axis=(0, 2))
     else:
         mean_abs_shap = np.abs(shap_values)
 
-    importance = mean_abs_shap.mean(axis=0)
+    # Flatten to 1D (n_features,) regardless of shape
+    importance = np.array(mean_abs_shap).mean(axis=0) if mean_abs_shap.ndim > 1 else mean_abs_shap
     top_idx    = np.argsort(importance)[-20:][::-1]
 
     fig, ax = plt.subplots(figsize=(9, 6))
@@ -375,20 +493,20 @@ def plot_metrics_comparison(results):
 def main():
     print("=" * 60)
     print("  Multi-Omics Cancer Classification")
-    print("  Foundation Models: Geneformer + MethylGPT")
+    print("  Foundation Models: BulkFormer + CpGPT")
     print("=" * 60)
     print("\nLoading data...")
-    gf_emb, mg_emb, y, labels, le = load_data()
+    gf_emb, mg_emb, ae_emb, y, labels, le = load_data()
 
     results = []
 
-    # ── Experiment 1: Geneformer only ──
-    gf_result = run_kfold(gf_emb, y, le, label="Geneformer only")
+    # ── Experiment 1: BulkFormer only ──
+    gf_result = run_kfold(gf_emb, y, le, label="BulkFormer only")
     results.append(gf_result)
 
     # ── Experiments 2-4: require MethylGPT embeddings ──
     if mg_emb is not None:
-        mg_result    = run_kfold(mg_emb, y, le, label="MethylGPT only")
+        mg_result    = run_kfold(mg_emb, y, le, label="CpGPT only")
         results.append(mg_result)
 
         early_emb    = np.concatenate([gf_emb, mg_emb], axis=1)
@@ -398,8 +516,12 @@ def main():
         lf_result = late_fusion(gf_result, mg_result, y, le)
         results.append(lf_result)
     else:
-        print("\nNote: MethylGPT embeddings not found — running Geneformer-only for now")
-        print("      Rerun after Bojana uploads methylgpt_embeddings.npy to Drive")
+        print("\nNote: CpGPT embeddings not found — running Geneformer-only for now")
+
+    # ── Experiment 5: Deep Fusion (inline multi-input autoencoder) ──
+    if mg_emb is not None:
+        ae_result = deep_fusion_kfold(gf_emb, mg_emb, y, le, latent_dim=64)
+        results.append(ae_result)
 
     # ── Experiment 5: Baseline (raw PCA) ──
     print("\nLoading raw features for baseline comparison...")
@@ -414,8 +536,12 @@ def main():
         else:
             baseline_X  = raw["meth_pca"]
             label_str   = "Baseline (Meth PCA)"
-        baseline_result = run_kfold(baseline_X, y, le, label=label_str)
-        results.append(baseline_result)
+        if baseline_X.shape[0] != len(y):
+            print(f"  Skipping baseline — h5ad has {baseline_X.shape[0]} samples, expected {len(y)}")
+            print("  (local h5ad is a small test file; Mila's MOFA+ results cover this baseline)")
+        else:
+            baseline_result = run_kfold(baseline_X, y, le, label=label_str)
+            results.append(baseline_result)
     else:
         print("  Skipping baseline (h5ad files not found locally)")
 
@@ -441,9 +567,9 @@ def main():
     best = max(results, key=lambda r: r["auc_mean"])
     print(f"\nBest model: {best['label']} (AUC={best['auc_mean']:.3f})")
 
-    if best["label"] == "Geneformer only":
+    if best["label"] == "BulkFormer only":
         best_X = gf_emb
-    elif best["label"] == "MethylGPT only":
+    elif best["label"] == "CpGPT only":
         best_X = mg_emb
     elif best["label"] == "Early Fusion" and mg_emb is not None:
         best_X = np.concatenate([gf_emb, mg_emb], axis=1)
@@ -452,10 +578,12 @@ def main():
 
     # ── UMAP ──
     print("\n── Generating UMAP plots... ──")
-    umap_embs = {"Geneformer": gf_emb}
+    umap_embs = {"BulkFormer": gf_emb}
     if mg_emb is not None:
-        umap_embs["MethylGPT"]    = mg_emb
+        umap_embs["CpGPT"]    = mg_emb
         umap_embs["Early Fusion"] = np.concatenate([gf_emb, mg_emb], axis=1)
+    if ae_emb is not None:
+        umap_embs["Deep Fusion"]  = ae_emb
     plot_umap(umap_embs, labels)
 
     # ── ROC curves ──
